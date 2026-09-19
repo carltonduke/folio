@@ -70,6 +70,68 @@
       camera.attachControl(canvas, true);
       setupCameraFraming(camera);
 
+      // Right-click resets the camera to its starting framing. Gated on
+      // pointerType "mouse" (desktop only) since a touch long-press also
+      // fires as a right click. A pointerdown/up pair that stays roughly in
+      // place counts as a click and resets; one that moves was a drag (e.g.
+      // right-click-panning) and is left alone.
+      const defaultCameraState = {
+        alpha: camera.alpha,
+        beta: camera.beta,
+        radius: camera.radius,
+        target: camera.target.clone(),
+      };
+
+      const nearestEquivalentAngle = (current, target) => {
+        const twoPi = Math.PI * 2;
+        const raw = target - current;
+        return current + (raw - twoPi * Math.round(raw / twoPi));
+      };
+
+      const resetCameraView = () => {
+        const frameRate = 30;
+        const totalFrames = frameRate * 0.4;
+        const easing = new BABYLON.CubicEase();
+        easing.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+        const loop = BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT;
+
+        BABYLON.Animation.CreateAndStartAnimation(
+          "cameraResetAlpha", camera, "alpha", frameRate, totalFrames,
+          camera.alpha, nearestEquivalentAngle(camera.alpha, defaultCameraState.alpha), loop, easing
+        );
+        BABYLON.Animation.CreateAndStartAnimation(
+          "cameraResetBeta", camera, "beta", frameRate, totalFrames,
+          camera.beta, defaultCameraState.beta, loop, easing
+        );
+        BABYLON.Animation.CreateAndStartAnimation(
+          "cameraResetRadius", camera, "radius", frameRate, totalFrames,
+          camera.radius, defaultCameraState.radius, loop, easing
+        );
+        BABYLON.Animation.CreateAndStartAnimation(
+          "cameraResetTarget", camera, "target", frameRate, totalFrames,
+          camera.target.clone(), defaultCameraState.target.clone(), loop, easing
+        );
+      };
+
+      canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+      let rightClickStart = null;
+      canvas.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "mouse" && e.button === 2) {
+          rightClickStart = { x: e.clientX, y: e.clientY };
+        }
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (e.pointerType !== "mouse" || e.button !== 2 || !rightClickStart) {
+          return;
+        }
+        const moved = Math.hypot(e.clientX - rightClickStart.x, e.clientY - rightClickStart.y);
+        rightClickStart = null;
+        if (moved < 4) {
+          resetCameraView();
+        }
+      });
+
       const ambient = new BABYLON.HemisphericLight(
         "ambient",
         new BABYLON.Vector3(0, 1, 0),
