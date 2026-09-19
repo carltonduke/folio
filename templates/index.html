@@ -310,25 +310,30 @@
         spill.intensity = 0.9;
         spill.range = 2.5;
 
-        // Click / hover behavior
-        head.actionManager = new BABYLON.ActionManager(scene);
-        head.actionManager.registerAction(
+        // Click / hover behavior. The screen mesh floats just in front of
+        // the head, so it's what actually gets picked at the center of the
+        // monitor - both meshes share one ActionManager so clicking either
+        // the screen or the surrounding bezel/back navigates.
+        const actionManager = new BABYLON.ActionManager(scene);
+        actionManager.registerAction(
           new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnPickTrigger, () => {
             window.open(url, "_blank", "noopener");
           })
         );
-        head.actionManager.registerAction(
+        actionManager.registerAction(
           new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnPointerOverTrigger, () => {
             canvas.style.cursor = "pointer";
             screenMat.emissiveColor = emissive.scale(1.3);
           })
         );
-        head.actionManager.registerAction(
+        actionManager.registerAction(
           new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnPointerOutTrigger, () => {
             canvas.style.cursor = "default";
             screenMat.emissiveColor = emissive;
           })
         );
+        head.actionManager = actionManager;
+        screen.actionManager = actionManager;
 
         return pivot;
       };
