@@ -225,6 +225,146 @@
         skyCtx.fill();
       }
 
+      // "carltonduke.com" rendered into the distant sky out of glowing
+      // starlight, nebula haze and a couple of little galaxies. The camera
+      // starts at alpha = -PI/2 looking toward world +Z, and this sphere's
+      // default UV mapping puts +Z at u = 0.75, so centering the text there
+      // keeps it sitting in the sky above the monitors from the very first
+      // frame, no orbiting required.
+      //
+      // Vertically, DynamicTexture samples this canvas upside down (v = 0,
+      // the canvas top, ends up rendered at the bottom of the sky and vice
+      // versa), confirmed by test-rendering marker shapes at known
+      // canvas positions. So to land well above the monitors we draw near
+      // the BOTTOM of the canvas (large y fraction), and the glyphs
+      // themselves are drawn through a vertical mirror further down so
+      // they still read right-side up once that flip is applied.
+      const brandText = "carltonduke.com";
+      const textCenterX = skyW * 0.75;
+      const textCenterY = skyH * 0.58;
+      skyCtx.textAlign = "center";
+      skyCtx.textBaseline = "middle";
+
+      // Auto-fit the font size to a target width (comfortably inside the
+      // ~20%-of-width slice of sky the default camera framing shows) rather
+      // than guessing a pixel size that happens to fit "carltonduke.com".
+      const targetTextWidth = skyW * 0.166;
+      let brandFontSize = 60;
+      skyCtx.font = `700 ${brandFontSize}px Arial, sans-serif`;
+      brandFontSize *= targetTextWidth / skyCtx.measureText(brandText).width;
+      skyCtx.font = `700 ${brandFontSize}px Arial, sans-serif`;
+      const brandTextWidth = skyCtx.measureText(brandText).width;
+
+      // Nebula haze glowing behind the letters.
+      for (let i = 0; i < 10; i++) {
+        const bx = textCenterX - brandTextWidth / 2 + Math.random() * brandTextWidth;
+        const by = textCenterY + (Math.random() - 0.5) * brandFontSize * 1.4;
+        const br = brandFontSize * (0.7 + Math.random() * 0.6);
+        const color = nebulaColors[Math.floor(Math.random() * nebulaColors.length)];
+        const grad = skyCtx.createRadialGradient(bx, by, 0, bx, by, br);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, "rgba(0,0,0,0)");
+        skyCtx.fillStyle = grad;
+        skyCtx.beginPath();
+        skyCtx.arc(bx, by, br, 0, Math.PI * 2);
+        skyCtx.fill();
+      }
+
+      // A couple of small galaxies flanking the text: an elliptical,
+      // slightly rotated halo around a bright pinpoint core.
+      const drawGalaxy = (gx, gy, size, haloColor) => {
+        skyCtx.save();
+        skyCtx.translate(gx, gy);
+        skyCtx.rotate((Math.random() - 0.5) * 0.6);
+        skyCtx.scale(1.7, 0.55);
+        const halo = skyCtx.createRadialGradient(0, 0, 0, 0, 0, size);
+        halo.addColorStop(0, "rgba(255,255,255,0.9)");
+        halo.addColorStop(0.18, haloColor);
+        halo.addColorStop(1, "rgba(0,0,0,0)");
+        skyCtx.fillStyle = halo;
+        skyCtx.beginPath();
+        skyCtx.arc(0, 0, size, 0, Math.PI * 2);
+        skyCtx.fill();
+        skyCtx.restore();
+      };
+      drawGalaxy(
+        textCenterX - brandTextWidth / 2 - brandFontSize * 1.6,
+        textCenterY - brandFontSize * 0.3,
+        brandFontSize * 0.85,
+        "rgba(170, 130, 255, 0.55)"
+      );
+      drawGalaxy(
+        textCenterX + brandTextWidth / 2 + brandFontSize * 1.5,
+        textCenterY + brandFontSize * 0.35,
+        brandFontSize * 0.75,
+        "rgba(255, 150, 200, 0.5)"
+      );
+
+      // Everything from here down (the glyphs and the star-dust traced over
+      // them) is drawn through a vertical mirror around the text's own
+      // center, to cancel out the sphere's vertical flip described above -
+      // without this they'd render upside down.
+      skyCtx.save();
+      skyCtx.translate(0, textCenterY);
+      skyCtx.scale(1, -1);
+      skyCtx.translate(0, -textCenterY);
+
+      // The glowing text itself: layered shadowBlur passes build a soft
+      // halo, then a crisp bright core on top.
+      skyCtx.save();
+      skyCtx.shadowColor = "rgba(150, 200, 255, 0.9)";
+      skyCtx.shadowBlur = brandFontSize * 0.9;
+      skyCtx.fillStyle = "rgba(255,255,255,0.85)";
+      skyCtx.fillText(brandText, textCenterX, textCenterY);
+      skyCtx.fillText(brandText, textCenterX, textCenterY);
+      skyCtx.shadowBlur = brandFontSize * 0.35;
+      skyCtx.shadowColor = "rgba(210, 225, 255, 0.9)";
+      skyCtx.fillText(brandText, textCenterX, textCenterY);
+      skyCtx.shadowBlur = brandFontSize * 0.1;
+      skyCtx.shadowColor = "#ffffff";
+      skyCtx.fillStyle = "#f4f9ff";
+      skyCtx.fillText(brandText, textCenterX, textCenterY);
+      skyCtx.restore();
+
+      // Finally, scatter individual bright "stars" traced over the glyph
+      // shapes on top of the glow, so the letters read as if they're
+      // composed of starlight rather than a flat fill. Sampled from an
+      // offscreen render of the same text.
+      const maskPadding = brandFontSize * 0.5;
+      const maskW = Math.ceil(brandTextWidth + maskPadding * 2);
+      const maskH = Math.ceil(brandFontSize * 1.6);
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = maskW;
+      maskCanvas.height = maskH;
+      const maskCtx = maskCanvas.getContext("2d");
+      maskCtx.font = skyCtx.font;
+      maskCtx.textAlign = "center";
+      maskCtx.textBaseline = "middle";
+      maskCtx.fillStyle = "#fff";
+      maskCtx.fillText(brandText, maskW / 2, maskH / 2);
+      const maskData = maskCtx.getImageData(0, 0, maskW, maskH).data;
+      const maskOriginX = textCenterX - maskW / 2;
+      const maskOriginY = textCenterY - maskH / 2;
+      for (let my = 0; my < maskH; my++) {
+        for (let mx = 0; mx < maskW; mx++) {
+          if (maskData[(my * maskW + mx) * 4 + 3] < 120) continue;
+          if (Math.random() > 0.4) continue;
+          const size = Math.random() < 0.12 ? 1.4 + Math.random() * 1.6 : 0.5 + Math.random() * 0.9;
+          const brightness = 0.6 + Math.random() * 0.4;
+          skyCtx.fillStyle = `rgba(225, 240, 255, ${brightness})`;
+          skyCtx.beginPath();
+          skyCtx.arc(
+            maskOriginX + mx + (Math.random() - 0.5),
+            maskOriginY + my + (Math.random() - 0.5),
+            size,
+            0,
+            Math.PI * 2
+          );
+          skyCtx.fill();
+        }
+      }
+      skyCtx.restore(); // end vertical-mirror wrapper
+
       skyTexture.update();
 
       const skyboxMat = new BABYLON.StandardMaterial("galaxySkyboxMat", scene);
@@ -290,8 +430,46 @@
       bodyMat.diffuseColor = new BABYLON.Color3(0.05, 0.05, 0.05);
       bodyMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
+      // Renders a label onto a small DynamicTexture: transparent everywhere
+      // except the word itself, in dark ink. This goes on its own separate,
+      // non-emissive mesh layered just in front of the screen (see below)
+      // rather than onto the screen's own material, because GlowLayer
+      // blooms a mesh's flat emissiveColor regardless of any
+      // emissiveTexture (see the bezel-margin comment above) - painting the
+      // word directly onto the glowing screen just gets it washed out by
+      // that uniform bloom. A separate, barely-emissive mesh sidesteps that
+      // entirely: it contributes ~nothing to the glow pass, so the text
+      // stays crisp and dark while the glowing screen still shows through
+      // around it.
+      const createLabelTexture = (name, text, aspect) => {
+        const texW = 1024;
+        const texH = Math.round(texW / aspect);
+        const tex = new BABYLON.DynamicTexture(
+          `${name}LabelTexture`,
+          { width: texW, height: texH },
+          scene,
+          true
+        );
+        tex.hasAlpha = true;
+        const ctx = tex.getContext();
+        ctx.clearRect(0, 0, texW, texH);
+
+        ctx.fillStyle = "#111114";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const targetWidth = texW * 0.74;
+        let fontSize = 80;
+        ctx.font = `700 ${fontSize}px Arial, sans-serif`;
+        fontSize *= targetWidth / ctx.measureText(text).width;
+        ctx.font = `700 ${fontSize}px Arial, sans-serif`;
+        ctx.fillText(text, texW / 2, texH / 2);
+
+        tex.update();
+        return tex;
+      };
+
       // Builds one monitor (stand + screen), wires up glow + click-to-navigate.
-      const createMonitor = ({ name, x, rotationY, color, url }) => {
+      const createMonitor = ({ name, x, rotationY, color, url, label }) => {
         const pivot = new BABYLON.TransformNode(`${name}Pivot`, scene);
         pivot.position.set(x, deskHeight, 0);
         pivot.rotation.y = rotationY;
@@ -361,6 +539,30 @@
         screen.position.set(0, 0.72, -headDepth / 2 - 0.008);
         screen.material = screenMat;
 
+        let labelPlane = null;
+        if (label) {
+          const screenWidth = headWidth - bezelMargin * 2;
+          const screenHeight = headHeight - bezelMargin * 2;
+          const labelMat = new BABYLON.StandardMaterial(`${name}LabelMat`, scene);
+          labelMat.diffuseTexture = createLabelTexture(name, label, screenWidth / screenHeight);
+          labelMat.diffuseTexture.hasAlpha = true;
+          labelMat.useAlphaFromDiffuseTexture = true;
+          labelMat.emissiveColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+          labelMat.specularColor = BABYLON.Color3.Black();
+          labelMat.disableLighting = true;
+
+          labelPlane = BABYLON.MeshBuilder.CreateBox(
+            `${name}Label`,
+            { width: screenWidth, height: screenHeight, depth: 0.005 },
+            scene
+          );
+          labelPlane.parent = pivot;
+          // A hair closer to the camera than the screen itself so it draws
+          // on top without z-fighting.
+          labelPlane.position.set(0, 0.72, -headDepth / 2 - 0.012);
+          labelPlane.material = labelMat;
+        }
+
         // Colored light spilling from the screen onto the desk, like a lit monitor.
         const spill = new BABYLON.PointLight(
           `${name}Light`,
@@ -396,6 +598,9 @@
         );
         head.actionManager = actionManager;
         screen.actionManager = actionManager;
+        if (labelPlane) {
+          labelPlane.actionManager = actionManager;
+        }
 
         return pivot;
       };
@@ -406,6 +611,7 @@
         rotationY: -Math.PI / 7, // angled inward, toward the center monitor
         color: new BABYLON.Color3(1, 1, 1), // white
         url: "https://linkedin.com/in/carltonduke/",
+        label: "linkedin",
       });
 
       createMonitor({
@@ -413,7 +619,8 @@
         x: 0,
         rotationY: 0,
         color: new BABYLON.Color3(0.15, 0.45, 1), // blue
-        url: "https://github.com/carltonduke/",
+        url: "https://drive.google.com/file/d/1Qok8LrV_gHALDDJedJI1MqsuTE3n3GLh/view?usp=drive_link",
+        label: "resume",
       });
 
       createMonitor({
@@ -421,7 +628,8 @@
         x: 1.4,
         rotationY: Math.PI / 7, // angled inward, toward the center monitor
         color: new BABYLON.Color3(1, 0.85, 0.1), // yellow
-        url: "https://drive.google.com/file/d/1Qok8LrV_gHALDDJedJI1MqsuTE3n3GLh/view?usp=drive_link",
+        url: "https://github.com/carltonduke/",
+        label: "github",
       });
 
       return scene;
