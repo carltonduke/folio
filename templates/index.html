@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
   <title>Babylon.js Scene</title>
   <style>
     html, body {
@@ -27,6 +28,30 @@
     const canvas = document.getElementById("renderCanvas");
     const engine = new BABYLON.Engine(canvas, true);
 
+    // Keeps the whole desk in frame no matter the window's shape. Babylon's
+    // default FOV mode holds the *vertical* field of view fixed and derives
+    // the horizontal one from the aspect ratio, so the visible width shrinks
+    // as the window narrows -- that's what was cutting off the outside
+    // monitors when the browser was docked to half the screen.
+    //
+    // Switching to FOVMODE_HORIZONTAL_FIXED fixes that, but it repurposes
+    // camera.fov as the horizontal angle, so the default value (tuned for a
+    // vertical FOV) would suddenly describe a much narrower horizontal view
+    // than before, cropping it even harder. Instead we compute the
+    // horizontal FOV that reproduces the original picture at a normal
+    // desktop window (16:9), so nothing changes there, and that same
+    // horizontal extent then stays visible at any other window shape.
+    const baseRadius = 3.8;
+    const baseAspect = 16 / 9;
+    const defaultVerticalFov = 0.8; // Babylon's default camera.fov
+    const horizontalFov =
+      2 * Math.atan(baseAspect * Math.tan(defaultVerticalFov / 2));
+    const setupCameraFraming = (camera) => {
+      camera.fovMode = BABYLON.Camera.FOVMODE_HORIZONTAL_FIXED;
+      camera.fov = horizontalFov;
+      camera.radius = baseRadius;
+    };
+
     const createScene = () => {
       const scene = new BABYLON.Scene(engine);
       scene.clearColor = new BABYLON.Color4(0.05, 0.05, 0.07, 1);
@@ -43,6 +68,7 @@
       camera.upperRadiusLimit = 14;
       camera.wheelPrecision = 50;
       camera.attachControl(canvas, true);
+      setupCameraFraming(camera);
 
       const ambient = new BABYLON.HemisphericLight(
         "ambient",
@@ -60,7 +86,9 @@
       key.intensity = 0.5;
 
       // Glow layer makes the emissive monitor screens actually look lit.
-      const glow = new BABYLON.GlowLayer("glow", scene);
+      // A smaller blur kernel than the (32px) default keeps the bloom from
+      // bleeding all the way across the screens' black bezels.
+      const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 8 });
       glow.intensity = 1;
 
       // Galaxy skybox: a big inverted sphere textured with a procedurally
@@ -224,18 +252,30 @@
         neck.position.set(0, 0.19, 0.05);
         neck.material = bodyMat;
 
-        // The monitor "head" is a single box: one face is the glowing screen,
-        // the other five are the dark bezel/back. A solid box always culls
-        // correctly from every viewing angle, so unlike a thin plane it can
-        // never disappear (black) from the front or glow through from the back.
+        // The monitor "head" is a plain dark box (bezel + back). A solid box
+        // always culls correctly from every viewing angle, so unlike a thin
+        // plane it can never disappear (black) from the front or glow
+        // through from the back.
+        const headWidth = 1.15;
+        const headHeight = 0.68;
+        const headDepth = 0.05;
         const head = BABYLON.MeshBuilder.CreateBox(
           `${name}Head`,
-          { width: 1.15, height: 0.68, depth: 0.05 },
+          { width: headWidth, height: headHeight, depth: headDepth },
           scene
         );
         head.parent = pivot;
         head.position.set(0, 0.72, 0);
+        head.material = bodyMat;
 
+        // The glowing screen is a separate, smaller box floating just in
+        // front of the head's face, leaving a strip of the dark bezel
+        // showing all the way around it. Keeping it as its own mesh (rather
+        // than a masked texture on the head's face): GlowLayer
+        // blooms from a material's flat emissiveColor and ignores any
+        // emissiveTexture, so a black border painted into a texture still
+        // glows at full brightness, only real geometry actually blocks it.
+        const bezelMargin = 0.06;
         const screenMat = new BABYLON.StandardMaterial(`${name}ScreenMat`, scene);
         const emissive = color.scale(2); // 100% brighter than the base color
         screenMat.diffuseColor = color;
@@ -243,17 +283,21 @@
         screenMat.specularColor = BABYLON.Color3.Black();
         screenMat.disableLighting = true; // always reads fully lit, regardless of scene lighting
 
-        const headMulti = new BABYLON.MultiMaterial(`${name}HeadMulti`, scene);
-        // Babylon's box face order puts "back" at index 0 and "front" at index 1.
-        headMulti.subMaterials = [bodyMat, screenMat, bodyMat, bodyMat, bodyMat, bodyMat];
-        head.material = headMulti;
-        head.subMeshes = [];
-        const headVertexCount = head.getTotalVertices();
-        [0, 6, 12, 18, 24, 30].forEach((startIndex, faceIndex) => {
-          head.subMeshes.push(
-            new BABYLON.SubMesh(faceIndex, 0, headVertexCount, startIndex, 6, head)
-          );
-        });
+        const screen = BABYLON.MeshBuilder.CreateBox(
+          `${name}Screen`,
+          {
+            width: headWidth - bezelMargin * 2,
+            height: headHeight - bezelMargin * 2,
+            depth: 0.01,
+          },
+          scene
+        );
+        screen.parent = pivot;
+        // Babylon's box face order puts "front" on the -Z side; nudge the
+        // screen just past the head's front face (at -headDepth / 2) so it
+        // sits proud of the bezel instead of z-fighting with it.
+        screen.position.set(0, 0.72, -headDepth / 2 - 0.008);
+        screen.material = screenMat;
 
         // Colored light spilling from the screen onto the desk, like a lit monitor.
         const spill = new BABYLON.PointLight(
@@ -294,7 +338,7 @@
         x: -1.4,
         rotationY: -Math.PI / 7, // angled inward, toward the center monitor
         color: new BABYLON.Color3(1, 1, 1), // white
-        url: "https://en.wikipedia.org",
+        url: "https://linkedin.com/in/carltonduke/",
       });
 
       createMonitor({
@@ -302,7 +346,7 @@
         x: 0,
         rotationY: 0,
         color: new BABYLON.Color3(0.15, 0.45, 1), // blue
-        url: "https://github.com",
+        url: "https://github.com/carltonduke/",
       });
 
       createMonitor({
@@ -310,7 +354,7 @@
         x: 1.4,
         rotationY: Math.PI / 7, // angled inward, toward the center monitor
         color: new BABYLON.Color3(1, 0.85, 0.1), // yellow
-        url: "https://example.com",
+        url: "https://drive.google.com/file/d/1Qok8LrV_gHALDDJedJI1MqsuTE3n3GLh/view?usp=drive_link",
       });
 
       return scene;
