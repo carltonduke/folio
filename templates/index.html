@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-  <title>Babylon.js Scene</title>
+  <title>Carlton Duke</title>
   <style>
     html, body {
       margin: 0;
@@ -390,6 +390,93 @@
       skyboxMat.diffuseColor = BABYLON.Color3.Black();
       skyboxMat.specularColor = BABYLON.Color3.Black();
       skybox.material = skyboxMat;
+
+      // Comets: small glowing "heads" that streak across the sky on a
+      // straight chord through a shell around the scene, each dragging a
+      // TrailMesh tail (a ribbon that tapers to a point, which is what
+      // gives it the comet-tail look). Both head and trail are emissive, so
+      // the existing GlowLayer picks them up automatically.
+      const cometColors = [
+        new BABYLON.Color3(0.8, 0.9, 1),
+        new BABYLON.Color3(1, 0.95, 0.85),
+      ];
+      const cometShellRadius = 220;
+      const randomSkyPoint = () => {
+        // Biased toward the upper hemisphere so comets read as sky, not
+        // ground traffic, while still dipping slightly below the horizon.
+        // theta is also biased toward the camera's default forward-facing
+        // direction (+Z, i.e. PI/2 here) so comets are actually visible on
+        // first load rather than only when orbiting around.
+        const theta = Math.PI / 2 + BABYLON.Scalar.RandomRange(-1.4, 1.4);
+        const phi = Math.acos(BABYLON.Scalar.RandomRange(-0.2, 0.9));
+        return new BABYLON.Vector3(
+          cometShellRadius * Math.sin(phi) * Math.cos(theta),
+          cometShellRadius * Math.cos(phi),
+          cometShellRadius * Math.sin(phi) * Math.sin(theta)
+        );
+      };
+
+      const createComet = (index) => {
+        const color = cometColors[index % cometColors.length];
+        const head = BABYLON.MeshBuilder.CreateSphere(
+          `comet${index}Head`,
+          { diameter: 0.5, segments: 6 },
+          scene
+        );
+        const headMat = new BABYLON.StandardMaterial(`comet${index}HeadMat`, scene);
+        headMat.diffuseColor = BABYLON.Color3.Black();
+        headMat.specularColor = BABYLON.Color3.Black();
+        headMat.emissiveColor = color;
+        headMat.disableLighting = true;
+        head.material = headMat;
+        head.setEnabled(false);
+
+        let trail = null;
+        let start = BABYLON.Vector3.Zero();
+        let end = BABYLON.Vector3.Zero();
+        let passStart = 0;
+        let duration = 1;
+
+        // A teleporting emitter would otherwise leave a spurious straight
+        // line across the sky in the old trail's history, so each pass gets
+        // a brand new TrailMesh rather than reusing one.
+        const beginPass = () => {
+          if (trail) trail.dispose();
+          start = randomSkyPoint();
+          end = randomSkyPoint();
+          head.position.copyFrom(start);
+          trail = new BABYLON.TrailMesh(`comet${index}Trail`, head, scene, 0.22, 40, true);
+          const trailMat = new BABYLON.StandardMaterial(`comet${index}TrailMat`, scene);
+          trailMat.diffuseColor = BABYLON.Color3.Black();
+          trailMat.specularColor = BABYLON.Color3.Black();
+          trailMat.emissiveColor = color;
+          trailMat.disableLighting = true;
+          trailMat.alpha = 0.45;
+          trailMat.alphaMode = BABYLON.Engine.ALPHA_ADD;
+          trail.material = trailMat;
+
+          duration = 3500 + Math.random() * 3000;
+          passStart = performance.now();
+          head.setEnabled(true);
+        };
+
+        scene.onBeforeRenderObservable.add(() => {
+          const t = (performance.now() - passStart) / duration;
+          if (t >= 1) {
+            head.setEnabled(false);
+            trail.setEnabled(false);
+            passStart = Infinity; // hold until the delayed beginPass() below fires
+            setTimeout(beginPass, 4000 + Math.random() * 8000);
+            return;
+          }
+          BABYLON.Vector3.LerpToRef(start, end, t, head.position);
+        });
+
+        beginPass();
+      };
+
+      createComet(0);
+      setTimeout(() => createComet(1), 3000);
 
       // Desk
       const deskHeight = 0.75;
