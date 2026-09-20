@@ -26,7 +26,15 @@
   <canvas id="renderCanvas"></canvas>
   <script>
     const canvas = document.getElementById("renderCanvas");
-    const engine = new BABYLON.Engine(canvas, true);
+    // adaptToDeviceRatio renders at the display's actual pixel density
+    // instead of CSS pixels. Mobile screens are mostly high-DPI, so without
+    // this the framebuffer (and everything drawn into it, including the
+    // glow layer's blur) is much coarser relative to the physical screen
+    // than on desktop -- that's the main reason the glow reads as
+    // overwhelming the text there.
+    const engine = new BABYLON.Engine(canvas, true, {}, true);
+    const isCoarsePointer =
+      window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
     // Keeps the whole desk in frame no matter the window's shape. Babylon's
     // default FOV mode holds the *vertical* field of view fixed and derives
@@ -64,7 +72,9 @@
         new BABYLON.Vector3(0, 1.25, 0),
         scene
       );
-      camera.lowerRadiusLimit = 2.5;
+      // Lets you get much closer to a monitor to read its label -- helpful
+      // on mobile where the fixed default framing leaves the text small.
+      camera.lowerRadiusLimit = 1.4;
       camera.upperRadiusLimit = 14;
       camera.wheelPrecision = 50;
       camera.attachControl(canvas, true);
@@ -149,9 +159,15 @@
 
       // Glow layer makes the emissive monitor screens actually look lit.
       // A smaller blur kernel than the (32px) default keeps the bloom from
-      // bleeding all the way across the screens' black bezels.
-      const glow = new BABYLON.GlowLayer("glow", scene, { blurKernelSize: 8 });
-      glow.intensity = 1;
+      // bleeding all the way across the screens' black bezels. On touch
+      // devices we go even smaller/dimmer -- the label text sits much
+      // closer (in screen-space pixels) to the glowing screen edge than on
+      // a typical desktop viewport, so the same blur reads as washing the
+      // text out.
+      const glow = new BABYLON.GlowLayer("glow", scene, {
+        blurKernelSize: isCoarsePointer ? 4 : 8,
+      });
+      glow.intensity = isCoarsePointer ? 0.6 : 1;
 
       // Galaxy skybox: a big inverted sphere textured with a procedurally
       // drawn starfield/nebula, so no external image assets are needed.
