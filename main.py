@@ -12,6 +12,11 @@ def index():
     """Serve index.html."""
     return render_template("index.html")
 
+@app.route("/traffic")
+def traffic_heatmap():
+    """Serve austin_highway_incidents.html"""
+    return render_template("austin_highway_incidents_map.html")
+
 
 def main():
     """Driver."""
